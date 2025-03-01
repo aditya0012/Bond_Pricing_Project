@@ -1,0 +1,113 @@
+# -*- coding: utf-8 -*-
+"""
+Created on Wed Feb 26 22:24:00 2025
+
+@author: ASUS
+"""
+
+import pandas as pd
+import numpy as np
+file_path = 'C:/Bonds Project/Repo_Trades_Bond_Pricing.xlsx'
+data = pd.read_excel(file_path)
+print(data.head())
+# Check for missing values
+print(data.isnull().sum())
+# Check data types
+print(data.dtypes)
+data['Trade_Date']=pd.to_datetime(data['Trade_Date'])
+data['Start_Date'] = pd.to_datetime(data['Start_Date'])
+data['Maturity_Date'] = pd.to_datetime(data['Maturity_Date'])
+print(data.head())
+data['Time_to_Maturity'] = (data['Maturity_Date'] - data['Trade_Date']).dt.days
+print(data[['Trade_Date', 'Maturity_Date', 'Time_to_Maturity']])
+
+def bond_price(row):
+   T = row['Time_to_Maturity'] / 365
+   F = row['Notional']
+   r = row['Yield'] / 100
+   C = F * 0.1  # 10% annual coupon
+
+   if T < 1:
+       return F / (1 + r) ** T  # Zero-coupon case
+
+   T_int = int(np.floor(T))
+   PV = sum(C / (1 + r) ** t for t in range(1, T_int + 1))  # Discounted coupons
+
+   if T_int != T:
+       PV += C / (1 + r) ** T  # Add last fractional coupon
+
+   PV += F / (1 + r) ** T  # Discount face value
+   return PV  # Return single value, not DataFrame
+
+def calculate_duration_convexity(data):
+    durations = []
+    
+    for _, row in data.iterrows():
+        T_years = row['Time_to_Maturity'] / 365
+        T = T_years
+        F = row['Notional']
+        r = row['Yield'] / 100
+        C = F * 0.1  # 10% annual coupon
+        T_int = int(np.floor(T))
+        PV = bond_price(row)  # Get PV for this bond
+        D = 0
+
+        if T < 1:
+            D = ((C / (1 + r)) + (T * F) / (1 + r) ** T) / PV
+        else:
+            T_int = int(np.floor(T))
+            D += sum((t * C) / (1 + r) ** t for t in range(1, T_int + 1))  # Sum weighted coupons
+            D += (T * F) / (1 + r) ** T  # Discounted final payment
+            D /= PV  # Normalize by bond price
+            
+        D_mod = D / (1+r) if D > 0 else 0
+        
+        Coupon_Cashflow = 0
+        Coupon_Cashflow = sum((t * (t + 1) * C) / (1 + r) ** (t + 2) for t in range(1, T_int + 1))
+        Time_Flow = (T * (T + 1)* F)/(1 + r)** (T+2)
+        Convexity = (Coupon_Cashflow + Time_Flow)/PV
+        if T < 1:
+            Convexity = (T * (T + 1) * F) / (1 + r) ** (T + 2) / PV  # Only final payment affects convexity
+        del_r = np.random.normal(0,0.01,1000)
+        del_p = -D_mod *del_r * PV + 0.5 * Convexity * (del_r**2) * PV
+        Mean_Delta_P = np.mean(del_p)
+        Max_Delta_P = np.max(del_p)
+        Min_Delta_P = np.min(del_p)
+        Std_Delta_P = np.std(del_p)
+        
+        
+        
+        
+        
+        
+        durations.append({
+            'Bond_Name': row['Bond_Name'],
+            'Duration': D,
+            'Modified_Duration': D_mod,
+            'Convexity': Convexity,
+            'Mean_Delta_P': Mean_Delta_P,
+            'Max_Delta_P': Max_Delta_P,
+            'Min_Delta_P': Min_Delta_P,
+            'Std_Delta_P': Std_Delta_P
+        })
+
+        
+    return pd.DataFrame(durations)
+data['Bond_Price'] = data.apply(bond_price, axis=1)
+duration_df = calculate_duration_convexity(data)
+data = data.merge(duration_df, on = 'Bond_Name', how = 'left')
+data.to_csv('C:/Users/ASUS/Desktop/Bonds Project/output_file.csv', index=False)
+
+print(data[['Bond_Name', 'Bond_Price', 'Mean_Delta_P', 'Std_Delta_P']].head())
+    
+
+
+'''processed_results = bond_price(data)
+processed_results.to_csv('C:/Bonds Project/output_file.csv', index=False)
+# Display Results
+print(processed_results)
+'''
+
+            
+    
+            
